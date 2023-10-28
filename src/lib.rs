@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: LGPL-2.1-only
 //
-// Copyright (C) 2021 Paul Cercueil <paul@crapouillou.net>
+// Copyright (C) 2021-2023 Paul Cercueil <paul@crapouillou.net>
 //
 // Based on the awesome layout library by Andrew Richards
 // (https://github.com/randrew/layout)
-
 
 /* Contain flags */
 pub const LAY_ROW:			u8 = 0x02;
@@ -35,25 +34,101 @@ pub const LAY_BREAK:		u8 = 0x10;
 pub type LayVec2 = [i16; 2];
 pub type LayVec4 = [i16; 4];
 
+pub struct BaseItem<'a> {
+	pub contain_flags: u8,
+	pub behave_flags: u8,
 
-pub trait LayItem<'a> where Self: 'a {
-	fn contain_flags(&self) -> u8;
-	fn behave_flags(&self) -> u8;
-	fn size(&self) -> LayVec2;
-	fn margins(&self) -> LayVec4;
+	pub margins: LayVec4,
+	pub size: LayVec2,
+	pub name: &'a str,
 
-	fn set_contain_flags(&mut self, contain: u8);
-	fn set_behave_flags(&mut self, behave: u8);
-	fn set_size(&mut self, size: LayVec2);
-	fn set_margins(&mut self, margins: LayVec4);
+	rect: LayVec4,
+	children: Vec<Box<dyn LayoutItem<'a>>>,
+}
 
-	fn children(&self) -> &Vec<Box<Self>>;
-	fn children_mut(&mut self) -> &mut Vec<Box<Self>>;
+pub trait LayoutItem<'a> where Self: 'a {
+	fn base_mut(&mut self) -> &mut BaseItem<'a>;
+	fn base(&self) -> &BaseItem<'a>;
 
-	fn rect(&self) -> LayVec4;
-	fn set_rect(&mut self, rect: LayVec4);
+	fn handle_click(&mut self, pos: LayVec2) -> bool;
+	fn handle_key(&mut self, key: u32, event: u32) -> bool;
+}
 
-	fn run(&mut self)
+impl<'a> BaseItem<'a>
+{
+	pub fn new(name: &'a str,
+			   contain_flags: u8,
+			   behave_flags: u8,
+			   size: LayVec2) -> Box<BaseItem<'a>>
+	{
+		Box::new(BaseItem {
+			contain_flags: contain_flags,
+			behave_flags: behave_flags,
+			margins: [0i16; 4] as LayVec4,
+			size: size,
+			rect: [0i16; 4] as LayVec4,
+			children: Vec::new(),
+			name: name,
+		})
+	}
+
+	pub fn print(&self)
+	{
+		println!("{}: Position: {}x{}, Size: {}x{}", self.name,
+				 self.rect[0], self.rect[1], self.rect[2], self.rect[3]);
+
+		for each in &self.children {
+			each.base().print();
+		}
+	}
+
+	pub fn insert(&mut self, child: Box<dyn LayoutItem<'a>>) -> usize
+	{
+		self.children.push(child);
+
+		return self.children.len();
+	}
+
+	pub fn append(&mut self, child: Box<dyn LayoutItem<'a>>, index: usize)
+	{
+		self.children.insert(index, child);
+	}
+
+	pub fn position(&self) -> LayVec4
+	{
+		return self.rect;
+	}
+
+	pub fn click(&mut self, pos: LayVec2) -> bool
+	{
+		for each in &mut self.children {
+			if each.base_mut().click(pos) {
+				return true;
+			}
+		}
+
+		if pos[0] >= self.rect[0]
+			&& pos[0] < self.rect[0] + self.rect[2]
+			&& pos[1] >= self.rect[1]
+			&& pos[1] < self.rect[1] + self.rect[3] {
+			return self.handle_click([pos[0] - self.rect[0], pos[1] - self.rect[1]]);
+		}
+
+		return false;
+	}
+
+	pub fn key(&mut self, key: u32, event: u32) -> bool
+	{
+		for each in &mut self.children {
+			if each.base_mut().key(key, event) {
+				return true;
+			}
+		}
+
+		return self.handle_key(key, event);
+	}
+
+	pub fn run(&mut self)
 	{
 		self.calc_size(0);
 		self.arrange(0);
@@ -65,11 +140,10 @@ pub trait LayItem<'a> where Self: 'a {
 	{
 		let mut need_size: i16 = 0;
 
-		for each in self.children() {
-			let rect = each.rect();
-			let margins = each.margins();
+		for each in &self.children {
+			let base = each.base();
 
-			need_size += rect[dim] + rect[dim + 2] + margins[dim + 2];
+			need_size += base.rect[dim] + base.rect[dim + 2] + base.margins[dim + 2];
 		}
 
 		return need_size;
@@ -79,11 +153,9 @@ pub trait LayItem<'a> where Self: 'a {
 	{
 		let mut need_size: i16 = 0;
 
-		for each in self.children() {
-			let rect = each.rect();
-			let margins = each.margins();
-
-			let child_size: i16 = rect[dim] + rect[dim + 2] + margins[dim + 2];
+		for each in &self.children {
+			let base = each.base();
+			let child_size: i16 = base.rect[dim] + base.rect[dim + 2] + base.margins[dim + 2];
 
 			need_size = i16::max(need_size, child_size);
 		}
@@ -96,16 +168,15 @@ pub trait LayItem<'a> where Self: 'a {
 		let mut need_size: i16 = 0;
 		let mut need_size2: i16 = 0;
 
-		for each in self.children() {
-			let rect = each.rect();
-			let margins = each.margins();
+		for each in &self.children {
+			let base = each.base();
 
-			if each.behave_flags() & LAY_BREAK != 0 {
+			if base.behave_flags & LAY_BREAK != 0 {
 				need_size2 += need_size;
 				need_size = 0;
 			}
 
-			let child_size: i16 = rect[1] + rect[3] + margins[3];
+			let child_size: i16 = base.rect[1] + base.rect[3] + base.margins[3];
 			need_size = i16::max(need_size, child_size);
 		}
 
@@ -117,16 +188,15 @@ pub trait LayItem<'a> where Self: 'a {
 		let mut need_size: i16 = 0;
 		let mut need_size2: i16 = 0;
 
-		for each in self.children() {
-			let rect = each.rect();
-			let margins = each.margins();
+		for each in &self.children {
+			let base = each.base();
 
-			if each.behave_flags() & LAY_BREAK != 0 {
+			if base.behave_flags & LAY_BREAK != 0 {
 				need_size2 = i16::max(need_size2, need_size);
 				need_size = 0;
 			}
 
-			need_size += rect[0] + rect[2] + margins[2];
+			need_size += base.rect[0] + base.rect[2] + base.margins[2];
 		}
 
 		return i16::max(need_size2, need_size);
@@ -134,24 +204,20 @@ pub trait LayItem<'a> where Self: 'a {
 
 	fn calc_size(&mut self, dim: usize)
 	{
-		for each in self.children_mut() {
-			each.calc_size(dim);
+		for each in &mut self.children {
+			each.base_mut().calc_size(dim);
 		}
 
-		let mut rect = self.rect();
-		let margins = self.margins();
+		self.rect[dim] = self.margins[dim];
 
-		rect[dim] = margins[dim];
-
-		if self.size()[dim] != 0 {
-			rect[dim + 2] = self.size()[dim];
-			self.set_rect(rect);
+		if self.size[dim] != 0 {
+			self.rect[dim + 2] = self.size[dim];
 			return;
 		}
 
 		let cal_size: i16;
 
-		match self.contain_flags() & LAY_LAYOUT_FLAGS {
+		match self.contain_flags & LAY_LAYOUT_FLAGS {
 			a if a == LAY_COLUMN | LAY_WRAP => {
 				/* Flex model */
 				if dim > 0 {
@@ -171,7 +237,7 @@ pub trait LayItem<'a> where Self: 'a {
 			}
 
 			LAY_COLUMN | LAY_ROW => {
-				if (self.contain_flags() & 1) as usize == dim {
+				if (self.contain_flags & 1) as usize == dim {
 					cal_size = self.calc_stacked_size(dim);
 				} else {
 					cal_size = self.calc_overlayed_size(dim);
@@ -183,15 +249,13 @@ pub trait LayItem<'a> where Self: 'a {
 			}
 		}
 
-		rect[dim + 2] = cal_size;
-		self.set_rect(rect);
+		self.rect[dim + 2] = cal_size;
 	}
 
 	fn arrange_stacked(&mut self, dim: usize, wrap: bool)
 	{
-		let nb_children: usize = self.children().len();
-		let rect = self.rect();
-		let max_x2: f32 = (rect[dim] + rect[dim + 2]) as f32;
+		let nb_children: usize = self.children.len();
+		let max_x2: f32 = (self.rect[dim] + self.rect[dim + 2]) as f32;
 
 		let mut start: usize = 0;
 
@@ -210,27 +274,25 @@ pub trait LayItem<'a> where Self: 'a {
 			let mut last = nb_children;
 
 			while idx < nb_children {
-				let child = &mut self.children_mut()[idx];
-				let child_rect = child.rect();
-				let child_margins = child.margins();
+				let child = self.children[idx].base_mut();
 				let mut extend: i16 = used;
 
-				if (child.behave_flags() >> dim) & LAY_HFILL == LAY_HFILL {
+				if (child.behave_flags >> dim) & LAY_HFILL == LAY_HFILL {
 					count += 1;
-					extend += child_rect[dim] + child_margins[dim + 2];
+					extend += child.rect[dim] + child.margins[dim + 2];
 				} else {
-					if child.size()[dim] == 0 {
+					if child.size[dim] == 0 {
 						squeezed_count += 1;
 					}
 
-					extend += child_rect[dim] + child_rect[dim + 2] + child_margins[dim + 2];
+					extend += child.rect[dim] + child.rect[dim + 2] + child.margins[dim + 2];
 				}
 
 				if wrap && total > 0 &&
-					(extend > rect[dim + 2] || child.behave_flags() & LAY_BREAK == LAY_BREAK) {
+					(extend > self.rect[dim + 2] || child.behave_flags & LAY_BREAK == LAY_BREAK) {
 						last = idx;
-						hardbreak = child.behave_flags() & LAY_BREAK == LAY_BREAK;
-						child.set_behave_flags(child.behave_flags() | LAY_BREAK);
+						hardbreak = child.behave_flags & LAY_BREAK == LAY_BREAK;
+						child.behave_flags |= LAY_BREAK;
 						break;
 				}
 
@@ -239,7 +301,7 @@ pub trait LayItem<'a> where Self: 'a {
 				idx += 1;
 			}
 
-			let extra_space: f32 = (rect[dim + 2] - used) as f32;
+			let extra_space: f32 = (self.rect[dim + 2] - used) as f32;
 			let mut filler: f32 = 0.0;
 			let mut spacer: f32 = 0.0;
 			let mut extra_margin: f32 = 0.0;
@@ -249,7 +311,7 @@ pub trait LayItem<'a> where Self: 'a {
 				if count > 0 {
 					filler = extra_space / count as f32;
 				} else if total > 0 {
-					match self.contain_flags() & LAY_JUSTIFY {
+					match self.contain_flags & LAY_JUSTIFY {
 						LAY_JUSTIFY => {
 							/*
 							 * Justify when not wrapping or not in last line,
@@ -277,41 +339,37 @@ pub trait LayItem<'a> where Self: 'a {
 			}
 
 			/* Distribute width among items */
-			let mut x: f32 = rect[dim] as f32;
+			let mut x: f32 = self.rect[dim] as f32;
 			let mut x1: f32;
 
 			idx = start;
 			while idx < last {
 				let ix0: i16;
 				let ix1: i16;
-				let child = &mut self.children_mut()[idx];
-				let child_margins = child.margins();
-				let mut child_rect = child.rect();
+				let child = self.children[idx].base_mut();
 
-				x += child_rect[dim] as f32 + extra_margin;
+				x += child.rect[dim] as f32 + extra_margin;
 
-				if (child.behave_flags() >> dim) & LAY_HFILL == LAY_HFILL {
+				if (child.behave_flags >> dim) & LAY_HFILL == LAY_HFILL {
 					x1 = x + filler;
-				} else if child.size()[dim] != 0 {
-					x1 = x + child_rect[dim + 2] as f32;
+				} else if child.size[dim] != 0 {
+					x1 = x + child.rect[dim + 2] as f32;
 				} else {
-					x1 = x + f32::max(0.0, child_rect[dim + 2] as f32 + eater);
+					x1 = x + f32::max(0.0, child.rect[dim + 2] as f32 + eater);
 				}
 
 				ix0 = x as i16;
 
 				if wrap {
-					ix1 = f32::min(max_x2 - child_margins[dim + 2] as f32, x1) as i16;
+					ix1 = f32::min(max_x2 - child.margins[dim + 2] as f32, x1) as i16;
 				} else {
 					ix1 = x1 as i16;
 				}
 
-				child_rect[dim] = ix0;
-				child_rect[dim + 2] = ix1 - ix0;
+				child.rect[dim] = ix0;
+				child.rect[dim + 2] = ix1 - ix0;
 
-				child.set_rect(child_rect);
-
-				x = x1 + child_margins[dim + 2] as f32;
+				x = x1 + child.margins[dim + 2] as f32;
 
 				extra_margin = spacer;
 				idx += 1;
@@ -323,74 +381,66 @@ pub trait LayItem<'a> where Self: 'a {
 
 	fn arrange_overlay(&mut self, dim: usize)
 	{
-		let rect = self.rect();
-
-		for each in self.children_mut() {
-			let mut child_rect = each.rect();
-			let child_margins = each.margins();
-			let flags: u8 = (each.behave_flags() >> dim) & LAY_HFILL;
-			let space: i16 = rect[dim + 2];
+		for each in &mut self.children {
+			let mut base = each.base_mut();
+			let flags: u8 = (base.behave_flags >> dim) & LAY_HFILL;
+			let space: i16 = self.rect[dim + 2];
 
 			match flags {
 				LAY_HCENTER => {
-					child_rect[dim] += (space - child_rect[dim + 2]) / 2 - child_margins[dim + 2];
+					base.rect[dim] += (space - base.rect[dim + 2]) / 2 - base.margins[dim + 2];
 				}
 
 				LAY_RIGHT => {
-					child_rect[dim] += space - child_rect[dim + 2]
-						- child_margins[dim] - child_margins[dim + 2];
+					base.rect[dim] += space - base.rect[dim + 2]
+						- base.margins[dim] - base.margins[dim + 2];
 				}
 
 				LAY_HFILL => {
-					child_rect[dim + 2] = i16::max(0, space - child_rect[dim]
-												  - child_margins[dim + 2]);
+					base.rect[dim + 2] = i16::max(0, space - base.rect[dim]
+												  - base.margins[dim + 2]);
 				}
 
 				_ => {}
 			}
 
-			child_rect[dim] += rect[dim];
-
-			each.set_rect(child_rect);
+			base.rect[dim] += self.rect[dim];
 		}
 	}
 
 	fn arrange_overlay_squeezed(&mut self, dim: usize, offset: i16, space: i16)
 	{
-		let mut rect = self.rect();
-		let margins = self.margins();
-		let min_size = i16::max(0, space - rect[dim] - margins[dim + 2]);
-		let flags: u8 = (self.behave_flags() >> dim) & LAY_HFILL;
+		let min_size = i16::max(0, space - self.rect[dim] - self.margins[dim + 2]);
+		let flags: u8 = (self.behave_flags >> dim) & LAY_HFILL;
 
 		match flags {
 			LAY_HCENTER => {
-				rect[dim + 2] = i16::min(rect[dim + 2], min_size);
-				rect[dim] += (space - rect[dim + 2]) / 2 - margins[dim + 2];
+				self.rect[dim + 2] = i16::min(self.rect[dim + 2], min_size);
+				self.rect[dim] += (space - self.rect[dim + 2]) / 2 - self.margins[dim + 2];
 			}
 
 			LAY_RIGHT => {
-				rect[dim + 2] = i16::min(rect[dim + 2], min_size);
-				rect[dim] = space - rect[dim + 2] - margins[dim + 2];
+				self.rect[dim + 2] = i16::min(self.rect[dim + 2], min_size);
+				self.rect[dim] = space - self.rect[dim + 2] - self.margins[dim + 2];
 			}
 
 			LAY_HFILL => {
-				rect[dim + 2] = min_size;
+				self.rect[dim + 2] = min_size;
 			}
 
 			_ => {
-				rect[dim + 2] = i16::min(rect[dim + 2], min_size);
+				self.rect[dim + 2] = i16::min(self.rect[dim + 2], min_size);
 			}
 		}
 
-		rect[dim] += offset;
-		self.set_rect(rect);
+		self.rect[dim] += offset;
 	}
 
 	fn arrange_overlay_squeezed_range(&mut self, dim: usize, mut start: usize,
 									  end: usize, offset: i16, space: i16)
 	{
 		while start != end {
-			let child = &mut self.children_mut()[start];
+			let child = self.children[start].base_mut();
 
 			child.arrange_overlay_squeezed(dim, offset, space);
 
@@ -400,18 +450,17 @@ pub trait LayItem<'a> where Self: 'a {
 
 	fn arrange_wrapped_overlay_squeezed(&mut self, dim: usize) -> i16
 	{
-		let nb_children = self.children().len();
-		let mut offset: i16 = self.rect()[dim];
+		let nb_children = self.children.len();
+		let mut offset: i16 = self.rect[dim];
 		let mut need_size: i16 = 0;
 		let mut start: usize = 0;
 		let mut idx: usize = 0;
 
 		while idx < nb_children {
-			let child = &mut self.children_mut()[idx];
-			let child_rect = child.rect();
-			let child_size: i16 = child_rect[dim] + child_rect[dim + 2] + child.margins()[dim + 2];
+			let child = self.children[idx].base_mut();
+			let child_size: i16 = child.rect[dim] + child.rect[dim + 2] + child.margins[dim + 2];
 
-			if child.behave_flags() & LAY_BREAK != 0 {
+			if child.behave_flags & LAY_BREAK != 0 {
 				self.arrange_overlay_squeezed_range(dim, start, idx, offset, need_size);
 				offset += need_size;
 				start = idx;
@@ -429,15 +478,13 @@ pub trait LayItem<'a> where Self: 'a {
 
 	fn arrange(&mut self, dim: usize)
 	{
-		let mut rect = self.rect();
-
-		match self.contain_flags() & LAY_LAYOUT_FLAGS {
+		match self.contain_flags & LAY_LAYOUT_FLAGS {
 			a if a == LAY_COLUMN | LAY_WRAP => {
 				if dim > 0 {
 					self.arrange_stacked(1, true);
 
 					let offset: i16 = self.arrange_wrapped_overlay_squeezed(0);
-					rect[2] = offset - rect[0];
+					self.rect[2] = offset - self.rect[0];
 				}
 			}
 
@@ -450,11 +497,11 @@ pub trait LayItem<'a> where Self: 'a {
 			}
 
 			LAY_COLUMN | LAY_ROW => {
-				if (self.contain_flags() & 1) as usize == dim {
+				if (self.contain_flags & 1) as usize == dim {
 					self.arrange_stacked(dim, false);
 				} else {
-					for each in self.children_mut() {
-						each.arrange_overlay_squeezed(dim, rect[dim], rect[dim + 2]);
+					for each in &mut self.children {
+						each.base_mut().arrange_overlay_squeezed(dim, self.rect[dim], self.rect[dim + 2]);
 					}
 				}
 			}
@@ -464,12 +511,19 @@ pub trait LayItem<'a> where Self: 'a {
 			}
 		}
 
-		self.set_rect(rect);
-
-		for each in self.children_mut() {
-			each.arrange(dim);
+		for each in &mut self.children {
+			each.base_mut().arrange(dim);
 		}
 	}
+}
+
+impl<'a> LayoutItem<'a> for BaseItem<'a>
+{
+	fn base(&self) -> &BaseItem<'a> { &self }
+	fn base_mut(&mut self) -> &mut BaseItem<'a> { self }
+
+	fn handle_click(&mut self, _pos: LayVec2) -> bool { false }
+	fn handle_key(&mut self, _key: u32, _event: u32) -> bool { false }
 }
 
 // vim: set noexpandtab ts=4 sw=4:
