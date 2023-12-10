@@ -31,8 +31,8 @@ pub const LAY_CENTER:		u8 = LAY_HCENTER | LAY_VCENTER;
 pub const LAY_BREAK:		u8 = 0x10;
 
 
-pub type LayVec2 = [i16; 2];
-pub type LayVec4 = [i16; 4];
+pub type LayVec2 = [i32; 2];
+pub type LayVec4 = [i32; 4];
 
 pub struct BaseItem<'a> {
 	pub contain_flags: u8,
@@ -128,9 +128,9 @@ impl<'a> BaseItem<'a>
 		Box::new(BaseItem {
 			contain_flags: contain_flags,
 			behave_flags: behave_flags,
-			margins: [0i16; 4] as LayVec4,
+			margins: [0i32; 4] as LayVec4,
 			size: size,
-			rect: [0i16; 4] as LayVec4,
+			rect: [0i32; 4] as LayVec4,
 			children: Vec::new(),
 			name: name,
 		})
@@ -200,9 +200,9 @@ impl<'a> BaseItem<'a>
 		self.arrange(1);
 	}
 
-	fn calc_stacked_size(&self, dim: usize) -> i16
+	fn calc_stacked_size(&self, dim: usize) -> i32
 	{
-		let mut need_size: i16 = 0;
+		let mut need_size: i32 = 0;
 
 		for each in &self.children {
 			let base = each.base();
@@ -213,24 +213,24 @@ impl<'a> BaseItem<'a>
 		return need_size;
 	}
 
-	fn calc_overlayed_size(&self, dim: usize) -> i16
+	fn calc_overlayed_size(&self, dim: usize) -> i32
 	{
-		let mut need_size: i16 = 0;
+		let mut need_size: i32 = 0;
 
 		for each in &self.children {
 			let base = each.base();
-			let child_size: i16 = base.rect[dim] + base.rect[dim + 2] + base.margins[dim + 2];
+			let child_size: i32 = base.rect[dim] + base.rect[dim + 2] + base.margins[dim + 2];
 
-			need_size = i16::max(need_size, child_size);
+			need_size = i32::max(need_size, child_size);
 		}
 
 		return need_size;
 	}
 
-	fn calc_wrapped_overlayed_size(&self) -> i16
+	fn calc_wrapped_overlayed_size(&self) -> i32
 	{
-		let mut need_size: i16 = 0;
-		let mut need_size2: i16 = 0;
+		let mut need_size: i32 = 0;
+		let mut need_size2: i32 = 0;
 
 		for each in &self.children {
 			let base = each.base();
@@ -240,30 +240,30 @@ impl<'a> BaseItem<'a>
 				need_size = 0;
 			}
 
-			let child_size: i16 = base.rect[1] + base.rect[3] + base.margins[3];
-			need_size = i16::max(need_size, child_size);
+			let child_size: i32 = base.rect[1] + base.rect[3] + base.margins[3];
+			need_size = i32::max(need_size, child_size);
 		}
 
 		return need_size2 + need_size;
 	}
 
-	fn calc_wrapped_stacked_size(&self) -> i16
+	fn calc_wrapped_stacked_size(&self) -> i32
 	{
-		let mut need_size: i16 = 0;
-		let mut need_size2: i16 = 0;
+		let mut need_size: i32 = 0;
+		let mut need_size2: i32 = 0;
 
 		for each in &self.children {
 			let base = each.base();
 
 			if base.behave_flags & LAY_BREAK != 0 {
-				need_size2 = i16::max(need_size2, need_size);
+				need_size2 = i32::max(need_size2, need_size);
 				need_size = 0;
 			}
 
 			need_size += base.rect[0] + base.rect[2] + base.margins[2];
 		}
 
-		return i16::max(need_size2, need_size);
+		return i32::max(need_size2, need_size);
 	}
 
 	fn calc_size(&mut self, dim: usize)
@@ -279,7 +279,7 @@ impl<'a> BaseItem<'a>
 			return;
 		}
 
-		let cal_size: i16;
+		let cal_size: i32;
 
 		match self.contain_flags & LAY_LAYOUT_FLAGS {
 			a if a == LAY_COLUMN | LAY_WRAP => {
@@ -324,7 +324,7 @@ impl<'a> BaseItem<'a>
 		let mut start: usize = 0;
 
 		while start < nb_children {
-			let mut used: i16 = 0;
+			let mut used: i32 = 0;
 			let mut count: usize = 0;
 			let mut squeezed_count: usize = 0;
 			let mut total: usize = 0;
@@ -339,7 +339,7 @@ impl<'a> BaseItem<'a>
 
 			while idx < nb_children {
 				let child = self.children[idx].base_mut();
-				let mut extend: i16 = used;
+				let mut extend: i32 = used;
 
 				if (child.behave_flags >> dim) & LAY_HFILL == LAY_HFILL {
 					count += 1;
@@ -408,8 +408,8 @@ impl<'a> BaseItem<'a>
 
 			idx = start;
 			while idx < last {
-				let ix0: i16;
-				let ix1: i16;
+				let ix0: i32;
+				let ix1: i32;
 				let child = self.children[idx].base_mut();
 
 				x += child.rect[dim] as f32 + extra_margin;
@@ -422,12 +422,12 @@ impl<'a> BaseItem<'a>
 					x1 = x + f32::max(0.0, child.rect[dim + 2] as f32 + eater);
 				}
 
-				ix0 = x as i16;
+				ix0 = x as i32;
 
 				if wrap {
-					ix1 = f32::min(max_x2 - child.margins[dim + 2] as f32, x1) as i16;
+					ix1 = f32::min(max_x2 - child.margins[dim + 2] as f32, x1) as i32;
 				} else {
-					ix1 = x1 as i16;
+					ix1 = x1 as i32;
 				}
 
 				child.rect[dim] = ix0;
@@ -448,7 +448,7 @@ impl<'a> BaseItem<'a>
 		for each in &mut self.children {
 			let mut base = each.base_mut();
 			let flags: u8 = (base.behave_flags >> dim) & LAY_HFILL;
-			let space: i16 = self.rect[dim + 2];
+			let space: i32 = self.rect[dim + 2];
 
 			match flags {
 				LAY_HCENTER => {
@@ -461,7 +461,7 @@ impl<'a> BaseItem<'a>
 				}
 
 				LAY_HFILL => {
-					base.rect[dim + 2] = i16::max(0, space - base.rect[dim]
+					base.rect[dim + 2] = i32::max(0, space - base.rect[dim]
 												  - base.margins[dim + 2]);
 				}
 
@@ -472,19 +472,19 @@ impl<'a> BaseItem<'a>
 		}
 	}
 
-	fn arrange_overlay_squeezed(&mut self, dim: usize, offset: i16, space: i16)
+	fn arrange_overlay_squeezed(&mut self, dim: usize, offset: i32, space: i32)
 	{
-		let min_size = i16::max(0, space - self.rect[dim] - self.margins[dim + 2]);
+		let min_size = i32::max(0, space - self.rect[dim] - self.margins[dim + 2]);
 		let flags: u8 = (self.behave_flags >> dim) & LAY_HFILL;
 
 		match flags {
 			LAY_HCENTER => {
-				self.rect[dim + 2] = i16::min(self.rect[dim + 2], min_size);
+				self.rect[dim + 2] = i32::min(self.rect[dim + 2], min_size);
 				self.rect[dim] += (space - self.rect[dim + 2]) / 2 - self.margins[dim + 2];
 			}
 
 			LAY_RIGHT => {
-				self.rect[dim + 2] = i16::min(self.rect[dim + 2], min_size);
+				self.rect[dim + 2] = i32::min(self.rect[dim + 2], min_size);
 				self.rect[dim] = space - self.rect[dim + 2] - self.margins[dim + 2];
 			}
 
@@ -493,7 +493,7 @@ impl<'a> BaseItem<'a>
 			}
 
 			_ => {
-				self.rect[dim + 2] = i16::min(self.rect[dim + 2], min_size);
+				self.rect[dim + 2] = i32::min(self.rect[dim + 2], min_size);
 			}
 		}
 
@@ -501,7 +501,7 @@ impl<'a> BaseItem<'a>
 	}
 
 	fn arrange_overlay_squeezed_range(&mut self, dim: usize, mut start: usize,
-									  end: usize, offset: i16, space: i16)
+									  end: usize, offset: i32, space: i32)
 	{
 		while start != end {
 			let child = self.children[start].base_mut();
@@ -512,17 +512,17 @@ impl<'a> BaseItem<'a>
 		}
 	}
 
-	fn arrange_wrapped_overlay_squeezed(&mut self, dim: usize) -> i16
+	fn arrange_wrapped_overlay_squeezed(&mut self, dim: usize) -> i32
 	{
 		let nb_children = self.children.len();
-		let mut offset: i16 = self.rect[dim];
-		let mut need_size: i16 = 0;
+		let mut offset: i32 = self.rect[dim];
+		let mut need_size: i32 = 0;
 		let mut start: usize = 0;
 		let mut idx: usize = 0;
 
 		while idx < nb_children {
 			let child = self.children[idx].base_mut();
-			let child_size: i16 = child.rect[dim] + child.rect[dim + 2] + child.margins[dim + 2];
+			let child_size: i32 = child.rect[dim] + child.rect[dim + 2] + child.margins[dim + 2];
 
 			if child.behave_flags & LAY_BREAK != 0 {
 				self.arrange_overlay_squeezed_range(dim, start, idx, offset, need_size);
@@ -531,7 +531,7 @@ impl<'a> BaseItem<'a>
 				need_size = 0;
 			}
 
-			need_size = i16::max(need_size, child_size);
+			need_size = i32::max(need_size, child_size);
 			idx += 1;
 		}
 
@@ -547,7 +547,7 @@ impl<'a> BaseItem<'a>
 				if dim > 0 {
 					self.arrange_stacked(1, true);
 
-					let offset: i16 = self.arrange_wrapped_overlay_squeezed(0);
+					let offset: i32 = self.arrange_wrapped_overlay_squeezed(0);
 					self.rect[2] = offset - self.rect[0];
 				}
 			}
