@@ -46,12 +46,76 @@ pub struct BaseItem<'a> {
 	children: Vec<Box<dyn LayoutItem<'a>>>,
 }
 
+pub enum AnimationMethod {
+	AnimationLinear,
+	AnimationExp,
+	AnimationLog,
+}
+
+pub struct AnimatedValue {
+	value: i32,
+	start: i32,
+	end: i32,
+	steps: u32,
+	step: u32,
+	anim: AnimationMethod,
+}
+
 pub trait LayoutItem<'a> where Self: 'a {
 	fn base_mut(&mut self) -> &mut BaseItem<'a>;
 	fn base(&self) -> &BaseItem<'a>;
 
 	fn handle_click(&mut self, pos: LayVec2) -> bool;
 	fn handle_key(&mut self, key: u32, event: u32) -> bool;
+}
+
+impl AnimatedValue
+{
+	pub fn new(start: i32, end: i32, steps: u32, anim: AnimationMethod) -> AnimatedValue
+	{
+		AnimatedValue {
+			value: start,
+			start: start,
+			end: end,
+			steps: steps,
+			step: 0,
+			anim: anim,
+		}
+	}
+
+	pub fn done(&self) -> bool
+	{
+		return self.step == self.steps;
+	}
+
+	pub fn run(&mut self) -> i32
+	{
+		if self.done() {
+			return self.value;
+		}
+
+		let delta = self.step as f32 / self.steps as f32;
+		let progress: f32;
+
+		match &self.anim {
+			AnimationMethod::AnimationLinear => {
+				progress = delta;
+			}
+
+			AnimationMethod::AnimationExp => {
+				progress = delta.exp();
+			}
+
+			AnimationMethod::AnimationLog => {
+				progress = delta.ln();
+			}
+		}
+
+		self.value = self.start + ((self.end - self.start) as f32 * progress) as i32;
+		self.step += 1;
+
+		return self.value;
+	}
 }
 
 impl<'a> BaseItem<'a>
